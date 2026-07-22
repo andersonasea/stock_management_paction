@@ -66,9 +66,31 @@ export async function loginUser(
   _prev: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const email = String(formData.get("email") || "").toLowerCase();
+  const email = String(formData.get("email") || "").toLowerCase().trim();
   const password = String(formData.get("password") || "");
   const callbackUrl = String(formData.get("callbackUrl") || "");
+
+  if (!email || password.length < 6) {
+    return { error: "Email ou mot de passe invalide" };
+  }
+
+  // Pré-vérification DB : message clair si Vercel ne joint pas Supabase (IPv4/pooler)
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (!existing) {
+      return { error: "Email ou mot de passe incorrect" };
+    }
+    const valid = await bcrypt.compare(password, existing.passwordHash);
+    if (!valid) {
+      return { error: "Email ou mot de passe incorrect" };
+    }
+  } catch (err) {
+    console.error("[login] database unreachable:", err);
+    return {
+      error:
+        "Base de données inaccessible depuis Vercel. Utilisez l'URI Connection Pooling (port 6543) de Supabase dans DATABASE_URL.",
+    };
+  }
 
   try {
     await signIn("credentials", {
@@ -78,7 +100,14 @@ export async function loginUser(
     });
   } catch (error) {
     if (error instanceof AuthError) {
-      return { error: "Email ou mot de passe incorrect" };
+      if (error.type === "CredentialsSignin") {
+        return { error: "Email ou mot de passe incorrect" };
+      }
+      console.error("[login] AuthError", error.type, error.cause);
+      return {
+        error:
+          "Connexion impossible. Vérifiez AUTH_SECRET et AUTH_URL sur Vercel.",
+      };
     }
     throw error;
   }
