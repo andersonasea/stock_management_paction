@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  VALIDATED
+  DELIVERED
+  CANCELLED
+}
+
+enum CostType {
+  FIXED
+  VARIABLE
+  OTHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders          Order[]
+  validatedOrders Order[]      @relation("ValidatedBy")
+  deliveredOrders Order[]      @relation("DeliveredBy")
+  costs           Cost[]
+  productions     Production[]
+  products        Product[]    @relation("CreatedProducts")
+}
+
+model Saveur {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model FormatProduit {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  volumeMl  Int?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  imageUrl       String?
+  unitPrice      Float    @default(0)
+  productionCost Float    @default(0)
+  stockQuantity  Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  saveurId String
+  saveur   Saveur @relation(fields: [saveurId], references: [id])
+  formatId String
+  format   FormatProduit @relation(fields: [formatId], references: [id])
+
+  createdById String?
+  createdBy   User?   @relation("CreatedProducts", fields: [createdById], references: [id])
+
+  orderItems  OrderItem[]
+  productions Production[]
+
+  @@unique([saveurId, formatId])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  status          OrderStatus @default(PENDING)
+  totalAmount     Float       @default(0)
+  notes           String?
+  customerAddress String?
+  customerPhone   String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  validatedAt     DateTime?
+  deliveredAt     DateTime?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  validatedById String?
+  validatedBy   User?   @relation("ValidatedBy", fields: [validatedById], references: [id])
+
+  deliveredById String?
+  deliveredBy   User?   @relation("DeliveredBy", fields: [deliveredById], references: [id])
+
+  items OrderItem[]
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  quantity  Int
+  unitPrice Float
+  subtotal  Float
+
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Production {
+  id        String   @id @default(cuid())
+  quantity  Int
+  note      String?
+  createdAt DateTime @default(now())
+
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  createdById String
+  createdBy   User    @relation(fields: [createdById], references: [id])
+}
+
+model Cost {
+  id          String    @id @default(cuid())
+  type        CostType
+  label       String
+  amount      Float
+  description String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+  createdAt   DateTime  @default(now())
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+}
