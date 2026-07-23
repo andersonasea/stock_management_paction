@@ -86,8 +86,8 @@ export default async function AdminProductsPage() {
               <input
                 name="imageUrl"
                 className="input"
-                placeholder="/banner.jpg"
-                defaultValue="/banner.jpg"
+                placeholder="/assets/gallery-01.jpeg"
+                defaultValue="/assets/gallery-01.jpeg"
               />
             </div>
             <div className="sm:col-span-2">

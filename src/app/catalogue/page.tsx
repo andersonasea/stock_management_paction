@@ -34,7 +34,7 @@ export default async function CataloguePage() {
           <article key={product.id} className="card-panel overflow-hidden !p-0 animate-rise">
             <div className="relative h-52 w-full">
               <Image
-                src={product.imageUrl || "/banner.jpg"}
+                src={product.imageUrl || "/assets/gallery-01.jpeg"}
                 alt={product.name}
                 fill
                 sizes="(max-width: 768px) 100vw, 50vw"

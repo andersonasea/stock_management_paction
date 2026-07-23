@@ -71,7 +71,7 @@ async function main() {
       saveurId: vanille.id,
       formatId: ml250.id,
       description: "Format pratique — Naturel & savoureux",
-      imageUrl: "/banner.jpg",
+      imageUrl: "/assets/gallery-01.jpeg",
       unitPrice: 2500,
       productionCost: 1200,
       stockQuantity: 50,
@@ -81,7 +81,7 @@ async function main() {
       saveurId: vanille.id,
       formatId: ml500.id,
       description: "Format pour plus de gourmandise — Saveur vanille",
-      imageUrl: "/visuel1.jpg",
+      imageUrl: "/assets/gallery-10.jpeg",
       unitPrice: 4500,
       productionCost: 2200,
       stockQuantity: 40,
@@ -91,7 +91,7 @@ async function main() {
       saveurId: arachide.id,
       formatId: ml250.id,
       description: "Format pratique — Saveur arachide",
-      imageUrl: "/esthy.jpg",
+      imageUrl: "/assets/gallery-08.jpeg",
       unitPrice: 2800,
       productionCost: 1400,
       stockQuantity: 35,
@@ -101,7 +101,7 @@ async function main() {
       saveurId: arachide.id,
       formatId: ml500.id,
       description: "Format pour plus de gourmandise — Saveur arachide",
-      imageUrl: "/esthy.jpg",
+      imageUrl: "/assets/gallery-15.jpeg",
       unitPrice: 5000,
       productionCost: 2500,
       stockQuantity: 30,
@@ -121,6 +121,14 @@ async function main() {
         data: {
           ...product,
           createdById: admin.id,
+        },
+      });
+    } else {
+      await prisma.product.update({
+        where: { id: existing.id },
+        data: {
+          imageUrl: product.imageUrl,
+          description: product.description,
         },
       });
     }

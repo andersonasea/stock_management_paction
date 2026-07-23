@@ -88,7 +88,7 @@ export async function loginUser(
     console.error("[login] database unreachable:", err);
     return {
       error:
-        "Base de données inaccessible depuis Vercel. Utilisez l'URI Connection Pooling (port 6543) de Supabase dans DATABASE_URL.",
+        "Base de donnees inaccessible depuis Vercel. Verifiez DATABASE_URL (port 6543 + pgbouncer=true) puis Redeploy.",
     };
   }
 

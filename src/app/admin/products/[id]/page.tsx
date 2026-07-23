@@ -99,7 +99,7 @@ export default async function EditProductPage({ params }: Props) {
             <input
               name="imageUrl"
               className="input"
-              defaultValue={product.imageUrl || "/banner.jpg"}
+              defaultValue={product.imageUrl || "/assets/gallery-01.jpeg"}
             />
           </div>
           <div className="sm:col-span-2">
