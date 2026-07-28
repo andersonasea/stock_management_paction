@@ -4,10 +4,12 @@ import { ReactNode } from "react";
 const links = [
   { href: "/admin", label: "Vue d'ensemble" },
   { href: "/admin/products", label: "Produits" },
+  { href: "/admin/materials", label: "Matières" },
+  { href: "/admin/purchases", label: "Achats" },
   { href: "/admin/saveurs", label: "Saveurs" },
   { href: "/admin/formats", label: "Formats" },
   { href: "/admin/stock", label: "Stock / Production" },
-  { href: "/admin/costs", label: "Coûts" },
+  { href: "/admin/costs", label: "Charges" },
   { href: "/admin/orders", label: "Commandes" },
 ];
 

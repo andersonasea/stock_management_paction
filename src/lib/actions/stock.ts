@@ -114,16 +114,26 @@ export async function deleteProduct(productId: string): Promise<void> {
   const orderItems = await prisma.orderItem.count({ where: { productId } });
 
   if (orderItems > 0) {
-    // Conservé dans l'historique des commandes → désactivation
     await prisma.product.update({
       where: { id: productId },
       data: { isActive: false },
     });
   } else {
-    await prisma.$transaction([
-      prisma.production.deleteMany({ where: { productId } }),
-      prisma.product.delete({ where: { id: productId } }),
-    ]);
+    await prisma.$transaction(async (tx) => {
+      const productions = await tx.production.findMany({
+        where: { productId },
+        select: { id: true },
+      });
+      const productionIds = productions.map((p) => p.id);
+      if (productionIds.length > 0) {
+        await tx.productionConsumption.deleteMany({
+          where: { productionId: { in: productionIds } },
+        });
+      }
+      await tx.production.deleteMany({ where: { productId } });
+      await tx.productRecipeItem.deleteMany({ where: { productId } });
+      await tx.product.delete({ where: { id: productId } });
+    });
   }
 
   revalidatePath("/admin/products");
@@ -144,20 +154,83 @@ export async function addProduction(
     return { error: "Produit et quantité requis" };
   }
 
-  await prisma.$transaction([
-    prisma.production.create({
-      data: { productId, quantity, note, createdById: user.id },
-    }),
-    prisma.product.update({
-      where: { id: productId },
-      data: { stockQuantity: { increment: quantity } },
-    }),
-  ]);
+  const recipe = await prisma.productRecipeItem.findMany({
+    where: { productId },
+    include: { rawMaterial: true },
+  });
+
+  if (recipe.length === 0) {
+    return {
+      error:
+        "Aucune recette définie pour ce produit. Ajoutez les matières dans la fiche produit.",
+    };
+  }
+
+  for (const line of recipe) {
+    const needed = line.quantityPerUnit * quantity;
+    if (line.rawMaterial.stockQuantity < needed) {
+      return {
+        error: `Stock insuffisant : ${line.rawMaterial.name} (besoin ${needed}, dispo ${line.rawMaterial.stockQuantity})`,
+      };
+    }
+  }
+
+  const unitCost = recipe.reduce(
+    (sum, line) => sum + line.quantityPerUnit * line.rawMaterial.unitCost,
+    0
+  );
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const production = await tx.production.create({
+        data: {
+          productId,
+          quantity,
+          unitCost,
+          note,
+          createdById: user.id,
+        },
+      });
+
+      for (const line of recipe) {
+        const consumedQty = line.quantityPerUnit * quantity;
+        const lineUnitCost = line.rawMaterial.unitCost;
+        await tx.productionConsumption.create({
+          data: {
+            productionId: production.id,
+            rawMaterialId: line.rawMaterialId,
+            quantity: consumedQty,
+            unitCost: lineUnitCost,
+            totalCost: consumedQty * lineUnitCost,
+          },
+        });
+        await tx.rawMaterial.update({
+          where: { id: line.rawMaterialId },
+          data: { stockQuantity: { decrement: consumedQty } },
+        });
+      }
+
+      await tx.product.update({
+        where: { id: productId },
+        data: {
+          stockQuantity: { increment: quantity },
+          productionCost: unitCost,
+        },
+      });
+    });
+  } catch {
+    return { error: "Échec de la production (stock matière insuffisant ?)" };
+  }
 
   revalidatePath("/admin/stock");
   revalidatePath("/admin/products");
+  revalidatePath("/admin/materials");
   revalidatePath("/catalogue");
-  return { success: "Production enregistrée, stock mis à jour" };
+  revalidatePath("/admin");
+  revalidatePath("/super-admin");
+  return {
+    success: `Production enregistrée — coût unitaire ${Math.round(unitCost)} CDF`,
+  };
 }
 
 export async function addCost(
@@ -170,13 +243,18 @@ export async function addCost(
   const amount = Number(formData.get("amount") || 0);
   const description = String(formData.get("description") || "") || undefined;
 
-  if (!["FIXED", "VARIABLE", "OTHER"].includes(type) || !label || amount <= 0) {
+  const allowed = ["DISTRIBUTION", "COMMERCIAL", "ADMINISTRATIVE", "OTHER"];
+  if (!allowed.includes(type) || !label || amount <= 0) {
     return { error: "Type, libellé et montant requis" };
   }
 
   await prisma.cost.create({
     data: {
-      type: type as "FIXED" | "VARIABLE" | "OTHER",
+      type: type as
+        | "DISTRIBUTION"
+        | "COMMERCIAL"
+        | "ADMINISTRATIVE"
+        | "OTHER",
       label,
       amount,
       description,
@@ -185,8 +263,9 @@ export async function addCost(
   });
 
   revalidatePath("/admin/costs");
+  revalidatePath("/admin");
   revalidatePath("/super-admin");
-  return { success: "Coût enregistré" };
+  return { success: "Charge enregistrée" };
 }
 
 export async function createOrder(
@@ -231,6 +310,7 @@ export async function createOrder(
           productId,
           quantity,
           unitPrice: product.unitPrice,
+          productionCost: product.productionCost,
           subtotal,
         },
       },

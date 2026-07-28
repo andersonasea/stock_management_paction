@@ -16,9 +16,16 @@ export const ORDER_STATUS_LABELS = {
 } as const;
 
 export const COST_TYPE_LABELS = {
-  FIXED: "Charge fixe",
-  VARIABLE: "Charge variable",
+  DISTRIBUTION: "Distribution / livraison",
+  COMMERCIAL: "Commercial / marketing",
+  ADMINISTRATIVE: "Administratif",
   OTHER: "Autre",
+} as const;
+
+export const MATERIAL_UNIT_LABELS = {
+  L: "Litre (L)",
+  KG: "Kilogramme (kg)",
+  PCS: "Pièce",
 } as const;
 
 export const ROLE_LABELS = {

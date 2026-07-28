@@ -21,10 +21,18 @@ enum OrderStatus {
   CANCELLED
 }
 
+/// Charges hors coût de production (matières gérées via achats / recettes)
 enum CostType {
-  FIXED
-  VARIABLE
+  DISTRIBUTION
+  COMMERCIAL
+  ADMINISTRATIVE
   OTHER
+}
+
+enum MaterialUnit {
+  L
+  KG
+  PCS
 }
 
 model User {
@@ -43,6 +51,7 @@ model User {
   costs           Cost[]
   productions     Production[]
   products        Product[]    @relation("CreatedProducts")
+  purchases       Purchase[]
 }
 
 model Saveur {
@@ -72,6 +81,7 @@ model Product {
   description    String?
   imageUrl       String?
   unitPrice      Float    @default(0)
+  /// Dernier coût de revient calculé (mis à jour à chaque production)
   productionCost Float    @default(0)
   stockQuantity  Int      @default(0)
   isActive       Boolean  @default(true)
@@ -88,8 +98,52 @@ model Product {
 
   orderItems  OrderItem[]
   productions Production[]
+  recipeItems ProductRecipeItem[]
 
   @@unique([saveurId, formatId])
+}
+
+model RawMaterial {
+  id            String       @id @default(cuid())
+  name          String       @unique
+  unit          MaterialUnit @default(PCS)
+  stockQuantity Float        @default(0)
+  /// Coût unitaire moyen pondéré (CUMP)
+  unitCost      Float        @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  purchases     Purchase[]
+  recipeItems   ProductRecipeItem[]
+  consumptions  ProductionConsumption[]
+}
+
+model Purchase {
+  id          String   @id @default(cuid())
+  quantity    Float
+  unitPrice   Float
+  totalAmount Float
+  supplier    String?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  rawMaterialId String
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  createdById   String
+  createdBy     User        @relation(fields: [createdById], references: [id])
+}
+
+model ProductRecipeItem {
+  id              String @id @default(cuid())
+  quantityPerUnit Float
+
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rawMaterialId String
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
+
+  @@unique([productId, rawMaterialId])
 }
 
 model Order {
@@ -118,10 +172,12 @@ model Order {
 }
 
 model OrderItem {
-  id        String @id @default(cuid())
-  quantity  Int
-  unitPrice Float
-  subtotal  Float
+  id             String @id @default(cuid())
+  quantity       Int
+  unitPrice      Float
+  /// Snapshot du coût de production au moment de la commande
+  productionCost Float  @default(0)
+  subtotal       Float
 
   orderId   String
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -132,6 +188,8 @@ model OrderItem {
 model Production {
   id        String   @id @default(cuid())
   quantity  Int
+  /// Coût de revient unitaire du lot (snapshot)
+  unitCost  Float    @default(0)
   note      String?
   createdAt DateTime @default(now())
 
@@ -139,6 +197,20 @@ model Production {
   product     Product @relation(fields: [productId], references: [id])
   createdById String
   createdBy   User    @relation(fields: [createdById], references: [id])
+
+  consumptions ProductionConsumption[]
+}
+
+model ProductionConsumption {
+  id        String @id @default(cuid())
+  quantity  Float
+  unitCost  Float
+  totalCost Float
+
+  productionId  String
+  production    Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  rawMaterialId String
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
 }
 
 model Cost {

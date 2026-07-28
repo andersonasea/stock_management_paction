@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { COST_TYPE_LABELS, formatPrice } from "@/lib/constants";
 import { addCost } from "@/lib/actions/stock";
 import { ActionForm } from "@/components/ActionForm";
+import type { CostType } from "@prisma/client";
 
 export default async function AdminCostsPage() {
   const costs = await prisma.cost.findMany({
@@ -9,9 +10,10 @@ export default async function AdminCostsPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const totals = {
-    FIXED: 0,
-    VARIABLE: 0,
+  const totals: Record<CostType, number> = {
+    DISTRIBUTION: 0,
+    COMMERCIAL: 0,
+    ADMINISTRATIVE: 0,
     OTHER: 0,
   };
   for (const c of costs) totals[c.type] += c.amount;
@@ -20,15 +22,15 @@ export default async function AdminCostsPage() {
     <div className="space-y-8">
       <div>
         <h1 className="font-[family-name:var(--font-display)] text-3xl text-brand">
-          Coûts
+          Charges hors production
         </h1>
         <p className="mt-1 text-muted">
-          Charges fixes, variables et autres dépenses
+          Livraison, commercial, administratif… (hors matières premières)
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {(Object.keys(totals) as Array<keyof typeof totals>).map((type) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {(Object.keys(totals) as CostType[]).map((type) => (
           <div key={type} className="card-panel">
             <p className="text-sm font-semibold text-muted">
               {COST_TYPE_LABELS[type]}
@@ -41,23 +43,37 @@ export default async function AdminCostsPage() {
       </div>
 
       <div className="card-panel">
-        <h2 className="text-lg font-extrabold text-brand-deep">Ajouter un coût</h2>
+        <h2 className="text-lg font-extrabold text-brand-deep">
+          Ajouter une charge
+        </h2>
         <ActionForm action={addCost} className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Type</label>
             <select name="type" className="input" required>
-              <option value="FIXED">Charge fixe</option>
-              <option value="VARIABLE">Charge variable</option>
+              <option value="DISTRIBUTION">Distribution / livraison</option>
+              <option value="COMMERCIAL">Commercial / marketing</option>
+              <option value="ADMINISTRATIVE">Administratif</option>
               <option value="OTHER">Autre</option>
             </select>
           </div>
           <div>
             <label className="label">Montant (CDF)</label>
-            <input name="amount" type="number" min={1} required className="input" />
+            <input
+              name="amount"
+              type="number"
+              min={1}
+              required
+              className="input"
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="label">Libellé</label>
-            <input name="label" required className="input" placeholder="Loyer, emballage…" />
+            <input
+              name="label"
+              required
+              className="input"
+              placeholder="Essence livraison, loyer atelier…"
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="label">Description</label>

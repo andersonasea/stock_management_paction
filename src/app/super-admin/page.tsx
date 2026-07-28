@@ -1,22 +1,23 @@
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/constants";
+import { getProfitMetrics } from "@/lib/finance";
 
 export default async function SuperAdminDashboard() {
-  const [users, admins, orders, delivered, pending, revenue, costs] =
+  const [users, admins, orders, delivered, pending, profit] =
     await Promise.all([
       prisma.user.count({ where: { role: "USER" } }),
       prisma.user.count({ where: { role: "ADMIN" } }),
       prisma.order.count(),
       prisma.order.findMany({
-        where: { status: "DELIVERED", validatedAt: { not: null }, deliveredAt: { not: null } },
+        where: {
+          status: "DELIVERED",
+          validatedAt: { not: null },
+          deliveredAt: { not: null },
+        },
         select: { createdAt: true, validatedAt: true, deliveredAt: true },
       }),
       prisma.order.count({ where: { status: "PENDING" } }),
-      prisma.order.aggregate({
-        where: { status: "DELIVERED" },
-        _sum: { totalAmount: true },
-      }),
-      prisma.cost.aggregate({ _sum: { amount: true } }),
+      getProfitMetrics(),
     ]);
 
   const responseTimes = delivered
@@ -52,11 +53,22 @@ export default async function SuperAdminDashboard() {
     { label: "En attente", value: pending },
     {
       label: "CA livré",
-      value: formatPrice(revenue._sum.totalAmount || 0),
+      value: formatPrice(profit.revenue),
+    },
+    {
+      label: "Marge brute",
+      value: formatPrice(profit.grossMargin),
+      hint: "Prix de vente − coût de production (commandes livrées)",
     },
     {
       label: "Coûts cumulés",
-      value: formatPrice(costs._sum.amount || 0),
+      value: formatPrice(profit.costs),
+    },
+    {
+      label: "Bénéfice net",
+      value: formatPrice(profit.netProfit),
+      hint: "Marge brute − coûts enregistrés",
+      highlight: profit.netProfit >= 0,
     },
     {
       label: "Délai moyen de validation",
@@ -80,9 +92,18 @@ export default async function SuperAdminDashboard() {
         {cards.map((card) => (
           <div key={card.label} className="card-panel">
             <p className="text-sm font-semibold text-muted">{card.label}</p>
-            <p className="mt-2 text-2xl font-extrabold text-brand-deep">
+            <p
+              className={`mt-2 text-2xl font-extrabold ${
+                "highlight" in card && card.highlight === false
+                  ? "text-red-600"
+                  : "text-brand-deep"
+              }`}
+            >
               {card.value}
             </p>
+            {"hint" in card && card.hint ? (
+              <p className="mt-2 text-xs text-muted">{card.hint}</p>
+            ) : null}
           </div>
         ))}
       </div>

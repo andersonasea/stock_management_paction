@@ -65,6 +65,53 @@ async function main() {
     create: { name: "500 ml", slug: "ml-500", volumeMl: 500 },
   });
 
+  // Matières premières + stock initial via CUMP
+  const materialsDef = [
+    { name: "Lait", unit: "L" as const, qty: 200, unitPrice: 2500 },
+    { name: "Sucre", unit: "KG" as const, qty: 50, unitPrice: 1800 },
+    { name: "Arôme vanille", unit: "L" as const, qty: 5, unitPrice: 15000 },
+    { name: "Pâte arachide", unit: "KG" as const, qty: 20, unitPrice: 8000 },
+    { name: "Pot 250 ml", unit: "PCS" as const, qty: 500, unitPrice: 150 },
+    { name: "Pot 500 ml", unit: "PCS" as const, qty: 400, unitPrice: 220 },
+  ];
+
+  const materialIds: Record<string, string> = {};
+  for (const m of materialsDef) {
+    const mat = await prisma.rawMaterial.upsert({
+      where: { name: m.name },
+      update: {
+        unit: m.unit,
+        stockQuantity: m.qty,
+        unitCost: m.unitPrice,
+        isActive: true,
+      },
+      create: {
+        name: m.name,
+        unit: m.unit,
+        stockQuantity: m.qty,
+        unitCost: m.unitPrice,
+      },
+    });
+    materialIds[m.name] = mat.id;
+
+    const hasPurchase = await prisma.purchase.findFirst({
+      where: { rawMaterialId: mat.id },
+    });
+    if (!hasPurchase) {
+      await prisma.purchase.create({
+        data: {
+          rawMaterialId: mat.id,
+          quantity: m.qty,
+          unitPrice: m.unitPrice,
+          totalAmount: m.qty * m.unitPrice,
+          supplier: "Fournisseur démo",
+          note: "Stock initial seed",
+          createdById: admin.id,
+        },
+      });
+    }
+  }
+
   const products = [
     {
       name: "EsthyPyaourt Vanille 250 ml",
@@ -73,8 +120,13 @@ async function main() {
       description: "Format pratique — Naturel & savoureux",
       imageUrl: "/assets/gallery-01.jpeg",
       unitPrice: 2500,
-      productionCost: 1200,
       stockQuantity: 50,
+      recipe: [
+        { material: "Lait", qty: 0.22 },
+        { material: "Sucre", qty: 0.03 },
+        { material: "Arôme vanille", qty: 0.005 },
+        { material: "Pot 250 ml", qty: 1 },
+      ],
     },
     {
       name: "EsthyPyaourt Vanille 500 ml",
@@ -83,8 +135,13 @@ async function main() {
       description: "Format pour plus de gourmandise — Saveur vanille",
       imageUrl: "/assets/gallery-10.jpeg",
       unitPrice: 4500,
-      productionCost: 2200,
       stockQuantity: 40,
+      recipe: [
+        { material: "Lait", qty: 0.45 },
+        { material: "Sucre", qty: 0.06 },
+        { material: "Arôme vanille", qty: 0.01 },
+        { material: "Pot 500 ml", qty: 1 },
+      ],
     },
     {
       name: "EsthyPyaourt Arachide 250 ml",
@@ -93,8 +150,13 @@ async function main() {
       description: "Format pratique — Saveur arachide",
       imageUrl: "/assets/gallery-08.jpeg",
       unitPrice: 2800,
-      productionCost: 1400,
       stockQuantity: 35,
+      recipe: [
+        { material: "Lait", qty: 0.2 },
+        { material: "Sucre", qty: 0.025 },
+        { material: "Pâte arachide", qty: 0.04 },
+        { material: "Pot 250 ml", qty: 1 },
+      ],
     },
     {
       name: "EsthyPyaourt Arachide 500 ml",
@@ -103,32 +165,63 @@ async function main() {
       description: "Format pour plus de gourmandise — Saveur arachide",
       imageUrl: "/assets/gallery-15.jpeg",
       unitPrice: 5000,
-      productionCost: 2500,
       stockQuantity: 30,
+      recipe: [
+        { material: "Lait", qty: 0.4 },
+        { material: "Sucre", qty: 0.05 },
+        { material: "Pâte arachide", qty: 0.08 },
+        { material: "Pot 500 ml", qty: 1 },
+      ],
     },
   ];
 
   for (const product of products) {
-    const existing = await prisma.product.findFirst({
+    const { recipe, ...data } = product;
+    let existing = await prisma.product.findFirst({
       where: {
         saveurId: product.saveurId,
         formatId: product.formatId,
       },
     });
 
+    const productionCost = recipe.reduce((sum, line) => {
+      const mat = materialsDef.find((m) => m.name === line.material)!;
+      return sum + line.qty * mat.unitPrice;
+    }, 0);
+
     if (!existing) {
-      await prisma.product.create({
+      existing = await prisma.product.create({
         data: {
-          ...product,
+          ...data,
+          productionCost,
           createdById: admin.id,
         },
       });
     } else {
-      await prisma.product.update({
+      existing = await prisma.product.update({
         where: { id: existing.id },
         data: {
           imageUrl: product.imageUrl,
           description: product.description,
+          productionCost,
+        },
+      });
+    }
+
+    for (const line of recipe) {
+      const rawMaterialId = materialIds[line.material];
+      await prisma.productRecipeItem.upsert({
+        where: {
+          productId_rawMaterialId: {
+            productId: existing.id,
+            rawMaterialId,
+          },
+        },
+        update: { quantityPerUnit: line.qty },
+        create: {
+          productId: existing.id,
+          rawMaterialId,
+          quantityPerUnit: line.qty,
         },
       });
     }

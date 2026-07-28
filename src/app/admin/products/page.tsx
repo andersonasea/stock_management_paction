@@ -74,8 +74,8 @@ export default async function AdminProductsPage() {
               <input name="unitPrice" type="number" min={0} required className="input" />
             </div>
             <div>
-              <label className="label">Coût unitaire production</label>
-              <input name="productionCost" type="number" min={0} required className="input" />
+              <label className="label">Coût unitaire (estimé, puis auto)</label>
+              <input name="productionCost" type="number" min={0} required className="input" defaultValue={0} />
             </div>
             <div>
               <label className="label">Quantité initiale</label>
@@ -110,7 +110,9 @@ export default async function AdminProductsPage() {
               <th className="px-4 py-3">Produit</th>
               <th className="px-4 py-3">Saveur</th>
               <th className="px-4 py-3">Format</th>
-              <th className="px-4 py-3">Prix</th>
+              <th className="px-4 py-3">Prix vente</th>
+              <th className="px-4 py-3">Coût production</th>
+              <th className="px-4 py-3">Marge / unité</th>
               <th className="px-4 py-3">Stock</th>
               <th className="px-4 py-3">Statut</th>
               <th className="px-4 py-3">Actions</th>
@@ -123,6 +125,10 @@ export default async function AdminProductsPage() {
                 <td className="px-4 py-3">{p.saveur.name}</td>
                 <td className="px-4 py-3">{p.format.name}</td>
                 <td className="px-4 py-3">{formatPrice(p.unitPrice)}</td>
+                <td className="px-4 py-3">{formatPrice(p.productionCost)}</td>
+                <td className="px-4 py-3 font-semibold text-brand-deep">
+                  {formatPrice(p.unitPrice - p.productionCost)}
+                </td>
                 <td className="px-4 py-3">{p.stockQuantity}</td>
                 <td className="px-4 py-3">
                   <span className={`badge ${p.isActive ? "badge-delivered" : "badge-cancelled"}`}>
