@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { logoutUser } from "@/lib/actions/auth";
@@ -9,13 +10,15 @@ export async function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-        <Link href="/" className="group flex items-center gap-2">
-          <span className="font-[family-name:var(--font-display)] text-2xl text-brand">
-            EsthyPyaourt
-          </span>
-          <span className="hidden text-xs font-medium text-muted sm:inline">
-            par P.Aktion
-          </span>
+        <Link href="/" className="group flex shrink-0 items-center">
+          <Image
+            src="/assets/paktion-logo.png"
+            alt="PAktion"
+            width={160}
+            height={71}
+            priority
+            className="h-9 w-auto object-contain sm:h-10"
+          />
         </Link>
 
         <nav className="flex flex-wrap items-center justify-end gap-2 text-sm font-medium">

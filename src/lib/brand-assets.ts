@@ -1,5 +1,6 @@
 /** Visuels marque EsthyPyaourt (dossier public/assets) */
 export const brandAssets = {
+  logo: "/assets/paktion-logo.png",
   video: "/assets/brand-video.mp4",
   heroVanille: "/assets/gallery-01.jpeg",
   promoPaques: "/assets/gallery-05.jpeg",
