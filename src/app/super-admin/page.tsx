@@ -3,22 +3,20 @@ import { formatPrice } from "@/lib/constants";
 import { getProfitMetrics } from "@/lib/finance";
 
 export default async function SuperAdminDashboard() {
-  const [users, admins, orders, delivered, pending, profit] =
-    await Promise.all([
-      prisma.user.count({ where: { role: "USER" } }),
-      prisma.user.count({ where: { role: "ADMIN" } }),
-      prisma.order.count(),
-      prisma.order.findMany({
-        where: {
-          status: "DELIVERED",
-          validatedAt: { not: null },
-          deliveredAt: { not: null },
-        },
-        select: { createdAt: true, validatedAt: true, deliveredAt: true },
-      }),
-      prisma.order.count({ where: { status: "PENDING" } }),
-      getProfitMetrics(),
-    ]);
+  // Séquentiel pour éviter P2024 (pool Supabase connection_limit=1)
+  const users = await prisma.user.count({ where: { role: "USER" } });
+  const admins = await prisma.user.count({ where: { role: "ADMIN" } });
+  const orders = await prisma.order.count();
+  const delivered = await prisma.order.findMany({
+    where: {
+      status: "DELIVERED",
+      validatedAt: { not: null },
+      deliveredAt: { not: null },
+    },
+    select: { createdAt: true, validatedAt: true, deliveredAt: true },
+  });
+  const pending = await prisma.order.count({ where: { status: "PENDING" } });
+  const profit = await getProfitMetrics();
 
   const responseTimes = delivered
     .filter((o) => o.validatedAt)

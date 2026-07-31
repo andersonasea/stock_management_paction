@@ -4,12 +4,14 @@ import { formatPrice } from "@/lib/constants";
 import { getProfitMetrics } from "@/lib/finance";
 
 export default async function AdminHomePage() {
-  const [products, pendingOrders, stockSum, profit] = await Promise.all([
-    prisma.product.count(),
-    prisma.order.count({ where: { status: "PENDING" } }),
-    prisma.product.aggregate({ _sum: { stockQuantity: true } }),
-    getProfitMetrics(),
-  ]);
+  const products = await prisma.product.count();
+  const pendingOrders = await prisma.order.count({
+    where: { status: "PENDING" },
+  });
+  const stockSum = await prisma.product.aggregate({
+    _sum: { stockQuantity: true },
+  });
+  const profit = await getProfitMetrics();
 
   const cards = [
     { label: "Produits", value: products, href: "/admin/products" },
