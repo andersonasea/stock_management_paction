@@ -265,7 +265,81 @@ export async function addCost(
   revalidatePath("/admin/costs");
   revalidatePath("/admin");
   revalidatePath("/super-admin");
+  revalidatePath("/admin/reports");
+  revalidatePath("/super-admin/reports");
   return { success: "Charge enregistrée" };
+}
+
+export async function updateCost(
+  costId: string,
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const existing = await prisma.cost.findUnique({ where: { id: costId } });
+  if (!existing) return { error: "Charge introuvable" };
+
+  const type = String(formData.get("type") || "");
+  const label = String(formData.get("label") || "").trim();
+  const amount = Number(formData.get("amount") || 0);
+  const description = String(formData.get("description") || "") || null;
+
+  const allowed = ["DISTRIBUTION", "COMMERCIAL", "ADMINISTRATIVE", "OTHER"];
+  if (!allowed.includes(type) || !label || amount <= 0) {
+    return { error: "Type, libellé et montant requis" };
+  }
+
+  await prisma.cost.update({
+    where: { id: costId },
+    data: {
+      type: type as
+        | "DISTRIBUTION"
+        | "COMMERCIAL"
+        | "ADMINISTRATIVE"
+        | "OTHER",
+      label,
+      amount,
+      description,
+    },
+  });
+
+  revalidatePath("/admin/costs");
+  revalidatePath(`/admin/costs/${costId}`);
+  revalidatePath("/admin");
+  revalidatePath("/super-admin");
+  revalidatePath("/admin/reports");
+  revalidatePath("/super-admin/reports");
+  return { success: "Charge mise à jour" };
+}
+
+export async function deleteCost(costId: string): Promise<void> {
+  await requireAdmin();
+  const existing = await prisma.cost.findUnique({ where: { id: costId } });
+  if (!existing) return;
+
+  await prisma.cost.delete({ where: { id: costId } });
+
+  revalidatePath("/admin/costs");
+  revalidatePath("/admin");
+  revalidatePath("/super-admin");
+  revalidatePath("/admin/reports");
+  revalidatePath("/super-admin/reports");
+  redirect("/admin/costs");
+}
+
+export async function deleteCostFromList(costId: string): Promise<void> {
+  await requireAdmin();
+  const existing = await prisma.cost.findUnique({ where: { id: costId } });
+  if (!existing) return;
+
+  await prisma.cost.delete({ where: { id: costId } });
+
+  revalidatePath("/admin/costs");
+  revalidatePath("/admin");
+  revalidatePath("/super-admin");
+  revalidatePath("/admin/reports");
+  revalidatePath("/super-admin/reports");
 }
 
 export async function createOrder(

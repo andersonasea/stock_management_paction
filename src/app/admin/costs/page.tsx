@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { COST_TYPE_LABELS, formatPrice } from "@/lib/constants";
-import { addCost } from "@/lib/actions/stock";
+import { addCost, deleteCostFromList } from "@/lib/actions/stock";
 import { ActionForm } from "@/components/ActionForm";
 import type { CostType } from "@prisma/client";
 
@@ -96,6 +97,7 @@ export default async function AdminCostsPage() {
               <th className="px-4 py-3">Libellé</th>
               <th className="px-4 py-3">Montant</th>
               <th className="px-4 py-3">Par</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -108,8 +110,33 @@ export default async function AdminCostsPage() {
                 <td className="px-4 py-3">{c.label}</td>
                 <td className="px-4 py-3 font-bold">{formatPrice(c.amount)}</td>
                 <td className="px-4 py-3">{c.createdBy.name}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/admin/costs/${c.id}`}
+                      className="btn btn-ghost !py-1.5 !px-3 text-xs"
+                    >
+                      Modifier
+                    </Link>
+                    <form action={deleteCostFromList.bind(null, c.id)}>
+                      <button
+                        type="submit"
+                        className="btn btn-danger !py-1.5 !px-3 text-xs"
+                      >
+                        Supprimer
+                      </button>
+                    </form>
+                  </div>
+                </td>
               </tr>
             ))}
+            {costs.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-muted">
+                  Aucune charge enregistrée.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

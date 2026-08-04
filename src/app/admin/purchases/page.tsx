@@ -1,20 +1,22 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatPrice, MATERIAL_UNIT_LABELS } from "@/lib/constants";
-import { addPurchase } from "@/lib/actions/materials";
+import {
+  addPurchase,
+  deletePurchaseFromList,
+} from "@/lib/actions/materials";
 import { ActionForm } from "@/components/ActionForm";
 
 export default async function AdminPurchasesPage() {
-  const [materials, purchases] = await Promise.all([
-    prisma.rawMaterial.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.purchase.findMany({
-      include: { rawMaterial: true, createdBy: true },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-  ]);
+  const materials = await prisma.rawMaterial.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+  });
+  const purchases = await prisma.purchase.findMany({
+    include: { rawMaterial: true, createdBy: true },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
 
   return (
     <div className="space-y-8">
@@ -99,6 +101,7 @@ export default async function AdminPurchasesPage() {
               <th className="px-4 py-3">Prix u.</th>
               <th className="px-4 py-3">Total</th>
               <th className="px-4 py-3">Par</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -116,11 +119,29 @@ export default async function AdminPurchasesPage() {
                   {formatPrice(p.totalAmount)}
                 </td>
                 <td className="px-4 py-3">{p.createdBy.name}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/admin/purchases/${p.id}`}
+                      className="btn btn-ghost !py-1.5 !px-3 text-xs"
+                    >
+                      Modifier
+                    </Link>
+                    <form action={deletePurchaseFromList.bind(null, p.id)}>
+                      <button
+                        type="submit"
+                        className="btn btn-danger !py-1.5 !px-3 text-xs"
+                      >
+                        Supprimer
+                      </button>
+                    </form>
+                  </div>
+                </td>
               </tr>
             ))}
             {purchases.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-muted">
+                <td colSpan={7} className="px-4 py-6 text-center text-muted">
                   Aucun achat pour le moment.
                 </td>
               </tr>

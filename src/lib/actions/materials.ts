@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import type { ActionState } from "@/lib/actions/stock";
+import type { Prisma } from "@prisma/client";
 
 async function requireAdmin() {
   const session = await auth();
@@ -13,6 +15,59 @@ async function requireAdmin() {
     throw new Error("Accès refusé");
   }
   return session.user;
+}
+
+type Tx = Prisma.TransactionClient;
+
+/**
+ * Recalcule stock = Σ achats − Σ consommations
+ * et CUMP en rejouant les achats chronologiquement.
+ */
+async function rebuildMaterialStockAndCump(
+  tx: Tx,
+  rawMaterialId: string
+): Promise<{ stockQuantity: number; unitCost: number }> {
+  const purchases = await tx.purchase.findMany({
+    where: { rawMaterialId },
+    orderBy: { createdAt: "asc" },
+    select: { quantity: true, unitPrice: true },
+  });
+
+  let stockFromPurchases = 0;
+  let unitCost = 0;
+  for (const p of purchases) {
+    const next = stockFromPurchases + p.quantity;
+    unitCost =
+      next > 0
+        ? (stockFromPurchases * unitCost + p.quantity * p.unitPrice) / next
+        : p.unitPrice;
+    stockFromPurchases = next;
+  }
+
+  const consumed = await tx.productionConsumption.aggregate({
+    where: { rawMaterialId },
+    _sum: { quantity: true },
+  });
+  const consumedQty = consumed._sum.quantity || 0;
+  const stockQuantity = stockFromPurchases - consumedQty;
+
+  await tx.rawMaterial.update({
+    where: { id: rawMaterialId },
+    data: {
+      stockQuantity,
+      unitCost: purchases.length > 0 ? unitCost : 0,
+    },
+  });
+
+  return { stockQuantity, unitCost };
+}
+
+function revalidatePurchasePaths(purchaseId?: string) {
+  revalidatePath("/admin/purchases");
+  revalidatePath("/admin/materials");
+  revalidatePath("/admin/stock");
+  revalidatePath("/admin/products");
+  if (purchaseId) revalidatePath(`/admin/purchases/${purchaseId}`);
 }
 
 const materialSchema = z.object({
@@ -77,14 +132,17 @@ export async function updateRawMaterial(
 export async function deleteRawMaterial(materialId: string): Promise<void> {
   await requireAdmin();
 
-  const [purchases, recipeItems, consumptions] = await Promise.all([
-    prisma.purchase.count({ where: { rawMaterialId: materialId } }),
-    prisma.productRecipeItem.count({ where: { rawMaterialId: materialId } }),
-    prisma.productionConsumption.count({ where: { rawMaterialId: materialId } }),
-  ]);
+  const purchases = await prisma.purchase.count({
+    where: { rawMaterialId: materialId },
+  });
+  const recipeItems = await prisma.productRecipeItem.count({
+    where: { rawMaterialId: materialId },
+  });
+  const consumptions = await prisma.productionConsumption.count({
+    where: { rawMaterialId: materialId },
+  });
 
   if (purchases > 0 || recipeItems > 0 || consumptions > 0) {
-    // Historique présent → désactivation plutôt que suppression
     await prisma.rawMaterial.update({
       where: { id: materialId },
       data: { isActive: false },
@@ -107,8 +165,8 @@ export async function addPurchase(
   const rawMaterialId = String(formData.get("rawMaterialId") || "");
   const quantity = Number(formData.get("quantity") || 0);
   const unitPrice = Number(formData.get("unitPrice") || 0);
-  const supplier = String(formData.get("supplier") || "") || undefined;
-  const note = String(formData.get("note") || "") || undefined;
+  const supplier = String(formData.get("supplier") || "") || null;
+  const note = String(formData.get("note") || "") || null;
 
   if (!rawMaterialId || quantity <= 0 || unitPrice < 0) {
     return { error: "Matière, quantité et prix requis" };
@@ -119,40 +177,163 @@ export async function addPurchase(
   });
   if (!material) return { error: "Matière introuvable" };
 
-  const totalAmount = quantity * unitPrice;
-  const stockBefore = material.stockQuantity;
-  const costBefore = material.unitCost;
-  const stockAfter = stockBefore + quantity;
-  const unitCostAfter =
-    stockAfter > 0
-      ? (stockBefore * costBefore + quantity * unitPrice) / stockAfter
-      : unitPrice;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.purchase.create({
+        data: {
+          rawMaterialId,
+          quantity,
+          unitPrice,
+          totalAmount: quantity * unitPrice,
+          supplier,
+          note,
+          createdById: user.id,
+        },
+      });
+      const rebuilt = await rebuildMaterialStockAndCump(tx, rawMaterialId);
+      if (rebuilt.stockQuantity < -0.0001) {
+        throw new Error("STOCK_NEGATIF");
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "STOCK_NEGATIF") {
+      return { error: "Stock matière insuffisant après cet achat (incohérence)" };
+    }
+    return { error: "Échec de l'enregistrement de l'achat" };
+  }
 
-  await prisma.$transaction([
-    prisma.purchase.create({
-      data: {
-        rawMaterialId,
-        quantity,
-        unitPrice,
-        totalAmount,
-        supplier,
-        note,
-        createdById: user.id,
-      },
-    }),
-    prisma.rawMaterial.update({
-      where: { id: rawMaterialId },
-      data: {
-        stockQuantity: stockAfter,
-        unitCost: unitCostAfter,
-      },
-    }),
-  ]);
-
-  revalidatePath("/admin/purchases");
-  revalidatePath("/admin/materials");
-  revalidatePath("/admin/stock");
+  revalidatePurchasePaths();
   return { success: "Achat enregistré — stock et CUMP mis à jour" };
+}
+
+export async function updatePurchase(
+  purchaseId: string,
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const existing = await prisma.purchase.findUnique({
+    where: { id: purchaseId },
+  });
+  if (!existing) return { error: "Achat introuvable" };
+
+  const rawMaterialId = String(formData.get("rawMaterialId") || "");
+  const quantity = Number(formData.get("quantity") || 0);
+  const unitPrice = Number(formData.get("unitPrice") || 0);
+  const supplier = String(formData.get("supplier") || "") || null;
+  const note = String(formData.get("note") || "") || null;
+
+  if (!rawMaterialId || quantity <= 0 || unitPrice < 0) {
+    return { error: "Matière, quantité et prix requis" };
+  }
+
+  const material = await prisma.rawMaterial.findUnique({
+    where: { id: rawMaterialId },
+  });
+  if (!material) return { error: "Matière introuvable" };
+
+  const oldMaterialId = existing.rawMaterialId;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.purchase.update({
+        where: { id: purchaseId },
+        data: {
+          rawMaterialId,
+          quantity,
+          unitPrice,
+          totalAmount: quantity * unitPrice,
+          supplier,
+          note,
+        },
+      });
+
+      const rebuilt = await rebuildMaterialStockAndCump(tx, rawMaterialId);
+      if (rebuilt.stockQuantity < -0.0001) {
+        throw new Error("STOCK_NEGATIF");
+      }
+
+      if (oldMaterialId !== rawMaterialId) {
+        const rebuiltOld = await rebuildMaterialStockAndCump(tx, oldMaterialId);
+        if (rebuiltOld.stockQuantity < -0.0001) {
+          throw new Error("STOCK_NEGATIF");
+        }
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "STOCK_NEGATIF") {
+      return {
+        error:
+          "Modification impossible : le stock matière deviendrait négatif (consommations déjà enregistrées).",
+      };
+    }
+    return { error: "Échec de la mise à jour de l'achat" };
+  }
+
+  revalidatePurchasePaths(purchaseId);
+  return { success: "Achat mis à jour — stock et CUMP recalculés" };
+}
+
+export async function deletePurchase(purchaseId: string): Promise<void> {
+  await requireAdmin();
+
+  const existing = await prisma.purchase.findUnique({
+    where: { id: purchaseId },
+  });
+  if (!existing) return;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.purchase.delete({ where: { id: purchaseId } });
+      const rebuilt = await rebuildMaterialStockAndCump(
+        tx,
+        existing.rawMaterialId
+      );
+      if (rebuilt.stockQuantity < -0.0001) {
+        throw new Error("STOCK_NEGATIF");
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "STOCK_NEGATIF") {
+      // Impossible de supprimer : on ne fait rien (ou on pourrait throw)
+      return;
+    }
+    throw e;
+  }
+
+  revalidatePurchasePaths();
+  redirect("/admin/purchases");
+}
+
+/** Suppression depuis la liste (sans redirect forcé si déjà sur la page) */
+export async function deletePurchaseFromList(purchaseId: string): Promise<void> {
+  await requireAdmin();
+
+  const existing = await prisma.purchase.findUnique({
+    where: { id: purchaseId },
+  });
+  if (!existing) return;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.purchase.delete({ where: { id: purchaseId } });
+      const rebuilt = await rebuildMaterialStockAndCump(
+        tx,
+        existing.rawMaterialId
+      );
+      if (rebuilt.stockQuantity < -0.0001) {
+        throw new Error("STOCK_NEGATIF");
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "STOCK_NEGATIF") {
+      return;
+    }
+    throw e;
+  }
+
+  revalidatePurchasePaths();
 }
 
 export async function addRecipeItem(
